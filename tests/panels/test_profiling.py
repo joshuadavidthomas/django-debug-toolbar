@@ -1,3 +1,6 @@
+import sys
+import unittest
+
 from django.contrib.auth.models import User
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse
@@ -33,8 +36,27 @@ class ProfilingPanelTestCase(BaseTestCase):
         # ensure the panel renders correctly.
         content = self.panel.content
         self.assertIn("regular_view", content)
+        self.assertIn("render", content)
         self.assertValidHTML(content)
 
+    @override_settings(DEBUG_TOOLBAR_CONFIG={"PROFILER_THRESHOLD_RATIO": 1})
+    def test_cum_time_threshold(self):
+        """
+        Test that cumulative time threshold excludes calls
+        """
+        self._get_response = lambda request: regular_view(request, "profiling")
+        response = self.panel.process_request(self.request)
+        self.panel.generate_stats(self.request, response)
+        # ensure the panel renders but doesn't include our function.
+        content = self.panel.content
+        self.assertIn("regular_view", content)
+        self.assertNotIn("render", content)
+        self.assertValidHTML(content)
+
+    @unittest.skipUnless(
+        sys.version_info < (3, 12, 0),
+        "Python 3.12 no longer contains a frame for list comprehensions.",
+    )
     def test_listcomp_escaped(self):
         self._get_response = lambda request: listcomp_view(request)
         response = self.panel.process_request(self.request)
@@ -73,7 +95,6 @@ class ProfilingPanelIntegrationTestCase(IntegrationTestCase):
         self.assertContains(response, "Profiling")
         self.assertEqual(User.objects.count(), 1)
 
-        with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                response = self.client.get("/new_user/")
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            response = self.client.get("/new_user/")
         self.assertEqual(User.objects.count(), 1)

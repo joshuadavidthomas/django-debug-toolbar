@@ -1,6 +1,11 @@
 name: Test
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  schedule:
+    # Run weekly on Saturday
+    - cron: '37 3 * * SAT'
 
 jobs:
   mysql:
@@ -9,15 +14,15 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10.0-rc.1']
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
 
     services:
       mariadb:
         image: mariadb
         env:
-          MYSQL_ROOT_PASSWORD: debug_toolbar
+          MARIADB_ROOT_PASSWORD: debug_toolbar
         options: >-
-          --health-cmd "mysqladmin ping"
+          --health-cmd "mariadb-admin ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -25,31 +30,27 @@ jobs:
         - 3306:3306
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        allow-prereleases: true
 
     - name: Get pip cache dir
       id: pip-cache
       run: |
-        echo "::set-output name=dir::$(pip cache dir)"
+        echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
 
     - name: Cache
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: ${{ steps.pip-cache.outputs.dir }}
         key:
-          ${{ matrix.python-version }}-v1-${{ hashFiles('**/setup.cfg') }}-${{ hashFiles('**/tox.ini') }}
+          ${{ matrix.python-version }}-v1-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/tox.ini') }}
         restore-keys: |
           ${{ matrix.python-version }}-v1-
-
-    - name: Install enchant (only for docs)
-      run: |
-        sudo apt-get -qq update
-        sudo apt-get -y install enchant
 
     - name: Install dependencies
       run: |
@@ -65,10 +66,6 @@ jobs:
         DB_HOST: 127.0.0.1
         DB_PORT: 3306
 
-    - name: Upload coverage
-      uses: codecov/codecov-action@v1
-      with:
-        name: Python ${{ matrix.python-version }}
 
   postgres:
     runs-on: ubuntu-latest
@@ -76,11 +73,25 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10.0-rc.1']
+        # Skip 3.13 here, it needs the psycopg3 / postgis3 database
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+        database: [postgresql, postgis]
+        # Add psycopg3 to our matrix for modern python versions
+        include:
+            - python-version: '3.10'
+              database: psycopg3
+            - python-version: '3.11'
+              database: psycopg3
+            - python-version: '3.12'
+              database: psycopg3
+            - python-version: '3.13'
+              database: psycopg3
+            - python-version: '3.13'
+              database: postgis3
 
     services:
       postgres:
-        image: postgres
+        image: postgis/postgis:14-3.1
         env:
           POSTGRES_DB: debug_toolbar
           POSTGRES_USER: debug_toolbar
@@ -94,31 +105,32 @@ jobs:
           --health-retries 5
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        allow-prereleases: true
 
     - name: Get pip cache dir
       id: pip-cache
       run: |
-        echo "::set-output name=dir::$(pip cache dir)"
+        echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
 
     - name: Cache
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: ${{ steps.pip-cache.outputs.dir }}
         key:
-          ${{ matrix.python-version }}-v1-${{ hashFiles('**/setup.cfg') }}-${{ hashFiles('**/tox.ini') }}
+          ${{ matrix.python-version }}-v1-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/tox.ini') }}
         restore-keys: |
           ${{ matrix.python-version }}-v1-
 
-    - name: Install enchant (only for docs)
+    - name: Install gdal-bin (for postgis)
       run: |
         sudo apt-get -qq update
-        sudo apt-get -y install enchant
+        sudo apt-get -y install gdal-bin
 
     - name: Install dependencies
       run: |
@@ -128,14 +140,9 @@ jobs:
     - name: Test with tox
       run: tox
       env:
-        DB_BACKEND: postgresql
+        DB_BACKEND: ${{ matrix.database }}
         DB_HOST: localhost
         DB_PORT: 5432
-
-    - name: Upload coverage
-      uses: codecov/codecov-action@v1
-      with:
-        name: Python ${{ matrix.python-version }}
 
   sqlite:
     runs-on: ubuntu-latest
@@ -143,27 +150,28 @@ jobs:
       fail-fast: false
       max-parallel: 5
       matrix:
-        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10.0-rc.1']
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        allow-prereleases: true
 
     - name: Get pip cache dir
       id: pip-cache
       run: |
-        echo "::set-output name=dir::$(pip cache dir)"
+        echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
 
     - name: Cache
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: ${{ steps.pip-cache.outputs.dir }}
         key:
-          ${{ matrix.python-version }}-v1-${{ hashFiles('**/setup.cfg') }}-${{ hashFiles('**/tox.ini') }}
+          ${{ matrix.python-version }}-v1-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/tox.ini') }}
         restore-keys: |
           ${{ matrix.python-version }}-v1-
 
@@ -178,35 +186,30 @@ jobs:
         DB_BACKEND: sqlite3
         DB_NAME: ":memory:"
 
-    - name: Upload coverage
-      uses: codecov/codecov-action@v1
-      with:
-        name: Python ${{ matrix.python-version }}
-
   lint:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
       with:
-        python-version: 3.8
+        python-version: 3.9
 
     - name: Get pip cache dir
       id: pip-cache
       run: |
-        echo "::set-output name=dir::$(pip cache dir)"
+        echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
 
     - name: Cache
-      uses: actions/cache@v2
+      uses: actions/cache@v4
       with:
         path: ${{ steps.pip-cache.outputs.dir }}
         key:
-          ${{ matrix.python-version }}-v1-${{ hashFiles('**/setup.cfg') }}-${{ hashFiles('**/tox.ini') }}
+          ${{ matrix.python-version }}-v1-${{ hashFiles('**/pyproject.toml') }}-${{ hashFiles('**/tox.ini') }}
         restore-keys: |
           ${{ matrix.python-version }}-v1-
 
@@ -216,4 +219,4 @@ jobs:
         python -m pip install --upgrade tox
 
     - name: Test with tox
-      run: tox -e docs,style,packaging
+      run: tox -e docs,packaging

@@ -1,6 +1,9 @@
 import functools
 
-from django.http import Http404, HttpResponseBadRequest
+from django.http import Http404
+from django.utils.translation import get_language, override as language_override
+
+from debug_toolbar import settings as dt_settings
 
 
 def require_show_toolbar(view):
@@ -17,19 +20,13 @@ def require_show_toolbar(view):
     return inner
 
 
-def signed_data_view(view):
-    """Decorator that handles unpacking a signed data form"""
+def render_with_toolbar_language(view):
+    """Force any rendering within the view to use the toolbar's language."""
 
     @functools.wraps(view)
     def inner(request, *args, **kwargs):
-        from debug_toolbar.forms import SignedDataForm
-
-        data = request.GET if request.method == "GET" else request.POST
-        signed_form = SignedDataForm(data)
-        if signed_form.is_valid():
-            return view(
-                request, *args, verified_data=signed_form.verified_data(), **kwargs
-            )
-        return HttpResponseBadRequest("Invalid signature")
+        lang = dt_settings.get_config()["TOOLBAR_LANGUAGE"] or get_language()
+        with language_override(lang):
+            return view(request, *args, **kwargs)
 
     return inner

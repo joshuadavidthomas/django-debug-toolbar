@@ -11,7 +11,10 @@ SECRET_KEY = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"
 
 INTERNAL_IPS = ["127.0.0.1"]
 
-LOGGING_CONFIG = None  # avoids spurious output in tests
+LOGGING = {  # avoids spurious output in tests
+    "version": 1,
+    "disable_existing_loggers": True,
+}
 
 
 # Application definition
@@ -26,6 +29,12 @@ INSTALLED_APPS = [
     "debug_toolbar",
     "tests",
 ]
+
+
+USE_GIS = os.getenv("DB_BACKEND") == "postgis"
+
+if USE_GIS:
+    INSTALLED_APPS = ["django.contrib.gis"] + INSTALLED_APPS
 
 MEDIA_URL = "/media/"  # Avoids https://code.djangoproject.com/ticket/21451
 
@@ -64,6 +73,8 @@ TEMPLATES = [
     },
 ]
 
+USE_TZ = True
+
 STATIC_ROOT = os.path.join(BASE_DIR, "tests", "static")
 
 STATIC_URL = "/static/"
@@ -82,7 +93,9 @@ CACHES = {
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.%s" % os.getenv("DB_BACKEND", "sqlite3"),
+        "ENGINE": "django.{}db.backends.{}".format(
+            "contrib.gis." if USE_GIS else "", os.getenv("DB_BACKEND", "sqlite3")
+        ),
         "NAME": os.getenv("DB_NAME", ":memory:"),
         "USER": os.getenv("DB_USER"),
         "PASSWORD": os.getenv("DB_PASSWORD"),
@@ -90,6 +103,20 @@ DATABASES = {
         "PORT": os.getenv("DB_PORT", ""),
         "TEST": {
             "USER": "default_test",
+        },
+    },
+    "replica": {
+        "ENGINE": "django.{}db.backends.{}".format(
+            "contrib.gis." if USE_GIS else "", os.getenv("DB_BACKEND", "sqlite3")
+        ),
+        "NAME": os.getenv("DB_NAME", ":memory:"),
+        "USER": os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST": os.getenv("DB_HOST", ""),
+        "PORT": os.getenv("DB_PORT", ""),
+        "TEST": {
+            "USER": "default_test",
+            "MIRROR": "default",
         },
     },
 }
@@ -100,5 +127,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
 DEBUG_TOOLBAR_CONFIG = {
     # Django's test client sets wsgi.multiprocess to True inappropriately
-    "RENDER_PANELS": False
+    "RENDER_PANELS": False,
+    # IS_RUNNING_TESTS must be False even though we're running tests because we're running the toolbar's own tests.
+    "IS_RUNNING_TESTS": False,
 }

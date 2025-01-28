@@ -1,20 +1,15 @@
-from collections import OrderedDict
+import contextlib
+import uuid
+from contextvars import ContextVar
 from os.path import join, normpath
 
 from django.conf import settings
 from django.contrib.staticfiles import finders, storage
-from django.core.checks import Warning
-from django.core.files.storage import get_storage_class
+from django.dispatch import Signal
 from django.utils.functional import LazyObject
 from django.utils.translation import gettext_lazy as _, ngettext
 
 from debug_toolbar import panels
-from debug_toolbar.utils import ThreadCollector
-
-try:
-    import threading
-except ImportError:
-    threading = None
 
 
 class StaticFile:
@@ -22,8 +17,9 @@ class StaticFile:
     Representing the different properties of a static file.
     """
 
-    def __init__(self, path):
+    def __init__(self, *, path, url):
         self.path = path
+        self._url = url
 
     def __str__(self):
         return self.path
@@ -32,18 +28,13 @@ class StaticFile:
         return finders.find(self.path)
 
     def url(self):
-        return storage.staticfiles_storage.url(self.path)
+        return self._url
 
 
-class FileCollector(ThreadCollector):
-    def collect(self, path, thread=None):
-        # handle the case of {% static "admin/" %}
-        if path.endswith("/"):
-            return
-        super().collect(StaticFile(path), thread)
-
-
-collector = FileCollector()
+# This will record and map the StaticFile instances with its associated
+# request across threads and async concurrent requests state.
+request_id_context_var = ContextVar("djdt_request_id_store")
+record_static_file_signal = Signal()
 
 
 class DebugConfiguredStorage(LazyObject):
@@ -54,19 +45,35 @@ class DebugConfiguredStorage(LazyObject):
     """
 
     def _setup(self):
+        try:
+            # From Django 4.2 use django.core.files.storage.storages in favor
+            # of the deprecated django.core.files.storage.get_storage_class
+            from django.core.files.storage import storages
 
-        configured_storage_cls = get_storage_class(settings.STATICFILES_STORAGE)
+            configured_storage_cls = storages["staticfiles"].__class__
+        except ImportError:
+            # Backwards compatibility for Django versions prior to 4.2
+            from django.core.files.storage import get_storage_class
+
+            configured_storage_cls = get_storage_class(settings.STATICFILES_STORAGE)
 
         class DebugStaticFilesStorage(configured_storage_cls):
-            def __init__(self, collector, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                self.collector = collector
-
             def url(self, path):
-                self.collector.collect(path)
-                return super().url(path)
+                url = super().url(path)
+                with contextlib.suppress(LookupError):
+                    # For LookupError:
+                    # The ContextVar wasn't set yet. Since the toolbar wasn't properly
+                    # configured to handle this request, we don't need to capture
+                    # the static file.
+                    request_id = request_id_context_var.get()
+                    record_static_file_signal.send(
+                        sender=self,
+                        staticfile=StaticFile(path=str(path), url=url),
+                        request_id=request_id,
+                    )
+                return url
 
-        self._wrapped = DebugStaticFilesStorage(collector)
+        self._wrapped = DebugStaticFilesStorage()
 
 
 _original_storage = storage.staticfiles_storage
@@ -77,6 +84,7 @@ class StaticFilesPanel(panels.Panel):
     A panel to display the found staticfiles.
     """
 
+    is_async = True
     name = "Static files"
     template = "debug_toolbar/panels/staticfiles.html"
 
@@ -90,13 +98,29 @@ class StaticFilesPanel(panels.Panel):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.num_found = 0
-        self._paths = {}
+        self.used_paths = []
+        self.request_id = str(uuid.uuid4())
 
-    def enable_instrumentation(self):
+    @classmethod
+    def ready(cls):
         storage.staticfiles_storage = DebugConfiguredStorage()
 
+    def _store_static_files_signal_handler(self, sender, staticfile, **kwargs):
+        # Only record the static file if the request_id matches the one
+        # that was used to create the panel.
+        # as sender of the signal and this handler will have multiple
+        # concurrent connections and we want to avoid storing of same
+        # staticfile from other connections as well.
+        if request_id_context_var.get() == self.request_id:
+            self.used_paths.append(staticfile)
+
+    def enable_instrumentation(self):
+        self.ctx_token = request_id_context_var.set(self.request_id)
+        record_static_file_signal.connect(self._store_static_files_signal_handler)
+
     def disable_instrumentation(self):
-        storage.staticfiles_storage = _original_storage
+        record_static_file_signal.disconnect(self._store_static_files_signal_handler)
+        request_id_context_var.reset(self.ctx_token)
 
     @property
     def num_used(self):
@@ -112,19 +136,12 @@ class StaticFilesPanel(panels.Panel):
             "%(num_used)s file used", "%(num_used)s files used", num_used
         ) % {"num_used": num_used}
 
-    def process_request(self, request):
-        collector.clear_collection()
-        return super().process_request(request)
-
     def generate_stats(self, request, response):
-        used_paths = collector.get_collection()
-        self._paths[threading.current_thread()] = used_paths
-
         self.record_stats(
             {
                 "num_found": self.num_found,
-                "num_used": len(used_paths),
-                "staticfiles": used_paths,
+                "num_used": len(self.used_paths),
+                "staticfiles": self.used_paths,
                 "staticfiles_apps": self.get_staticfiles_apps(),
                 "staticfiles_dirs": self.get_staticfiles_dirs(),
                 "staticfiles_finders": self.get_staticfiles_finders(),
@@ -137,7 +154,7 @@ class StaticFilesPanel(panels.Panel):
         of relative and file system paths which that finder was able
         to find.
         """
-        finders_mapping = OrderedDict()
+        finders_mapping = {}
         for finder in finders.get_finders():
             try:
                 for path, finder_storage in finder.list([]):
@@ -177,27 +194,3 @@ class StaticFilesPanel(panels.Panel):
                     if app not in apps:
                         apps.append(app)
         return apps
-
-    @classmethod
-    def run_checks(cls):
-        """
-        Check that the integration is configured correctly for the panel.
-
-        Specifically look for static files that haven't been collected yet.
-
-        Return a list of :class: `django.core.checks.CheckMessage` instances.
-        """
-        errors = []
-        for finder in finders.get_finders():
-            try:
-                for path, finder_storage in finder.list([]):
-                    finder_storage.path(path)
-            except OSError:
-                errors.append(
-                    Warning(
-                        "debug_toolbar requires the STATICFILES_DIRS directories to exist.",
-                        hint="Running manage.py collectstatic may help uncover the issue.",
-                        id="debug_toolbar.staticfiles.W001",
-                    )
-                )
-        return errors

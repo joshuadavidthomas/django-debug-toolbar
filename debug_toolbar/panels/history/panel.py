@@ -1,5 +1,5 @@
+import contextlib
 import json
-from collections import OrderedDict
 
 from django.http.request import RawPostDataException
 from django.template.loader import render_to_string
@@ -8,7 +8,6 @@ from django.urls import path
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from debug_toolbar.forms import SignedDataForm
 from debug_toolbar.panels import Panel
 from debug_toolbar.panels.history import views
 from debug_toolbar.panels.history.forms import HistoryStoreForm
@@ -17,9 +16,18 @@ from debug_toolbar.panels.history.forms import HistoryStoreForm
 class HistoryPanel(Panel):
     """A panel to display History"""
 
+    is_async = True
     title = _("History")
     nav_title = _("History")
     template = "debug_toolbar/panels/history.html"
+
+    def get_headers(self, request):
+        headers = super().get_headers(request)
+        observe_request = self.toolbar.get_observe_request()
+        store_id = self.toolbar.store_id
+        if store_id and observe_request(request):
+            headers["djdt-store-id"] = store_id
+        return headers
 
     @property
     def enabled(self):
@@ -54,12 +62,11 @@ class HistoryPanel(Panel):
             if (
                 not data
                 and request.body
-                and request.META.get("CONTENT_TYPE") == "application/json"
+                and request.headers.get("content-type") == "application/json"
             ):
-                try:
+                with contextlib.suppress(ValueError):
                     data = json.loads(request.body)
-                except ValueError:
-                    pass
+
         except RawPostDataException:
             # It is not guaranteed that we may read the request data (again).
             data = None
@@ -80,12 +87,12 @@ class HistoryPanel(Panel):
 
         Fetch every store for the toolbar and include it in the template.
         """
-        stores = OrderedDict()
+        stores = {}
         for id, toolbar in reversed(self.toolbar._store.items()):
             stores[id] = {
                 "toolbar": toolbar,
-                "form": SignedDataForm(
-                    initial=HistoryStoreForm(initial={"store_id": id}).initial
+                "form": HistoryStoreForm(
+                    initial={"store_id": id, "exclude_history": True}
                 ),
             }
 
@@ -94,10 +101,11 @@ class HistoryPanel(Panel):
             {
                 "current_store_id": self.toolbar.store_id,
                 "stores": stores,
-                "refresh_form": SignedDataForm(
-                    initial=HistoryStoreForm(
-                        initial={"store_id": self.toolbar.store_id}
-                    ).initial
+                "refresh_form": HistoryStoreForm(
+                    initial={
+                        "store_id": self.toolbar.store_id,
+                        "exclude_history": True,
+                    }
                 ),
             },
         )

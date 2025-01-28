@@ -3,12 +3,15 @@ from django.http import HttpResponseBadRequest, JsonResponse
 from django.template import Origin, TemplateDoesNotExist
 from django.template.engine import Engine
 from django.template.loader import render_to_string
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html, mark_safe
 
-from debug_toolbar.decorators import require_show_toolbar
+from debug_toolbar._compat import login_not_required
+from debug_toolbar.decorators import render_with_toolbar_language, require_show_toolbar
 
 
+@login_not_required
 @require_show_toolbar
+@render_with_toolbar_language
 def template_source(request):
     """
     Return the source of a template, syntax-highlighted by Pygments if
@@ -44,18 +47,17 @@ def template_source(request):
         except TemplateDoesNotExist:
             pass
     else:
-        source = "Template Does Not Exist: {}".format(template_origin_name)
+        source = f"Template Does Not Exist: {template_origin_name}"
 
     try:
         from pygments import highlight
         from pygments.formatters import HtmlFormatter
         from pygments.lexers import HtmlDjangoLexer
-
-        source = highlight(source, HtmlDjangoLexer(), HtmlFormatter())
+    except ModuleNotFoundError:
+        source = format_html("<code>{}</code>", source)
+    else:
+        source = highlight(source, HtmlDjangoLexer(), HtmlFormatter(wrapcode=True))
         source = mark_safe(source)
-        source.pygmentized = True
-    except ImportError:
-        pass
 
     content = render_to_string(
         "debug_toolbar/panels/template_source.html",

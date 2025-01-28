@@ -1,12 +1,10 @@
-import os
-import unittest
+from unittest.mock import patch
 
-import django
-from django.conf import settings
 from django.core.checks import Warning, run_checks
 from django.test import SimpleTestCase, override_settings
+from django.urls import NoReverseMatch
 
-PATH_DOES_NOT_EXIST = os.path.join(settings.BASE_DIR, "tests", "invalid_static")
+from debug_toolbar.apps import debug_toolbar_installed_when_running_tests_check
 
 
 class ChecksTestCase(SimpleTestCase):
@@ -91,23 +89,6 @@ class ChecksTestCase(SimpleTestCase):
             messages,
         )
 
-    @unittest.skipIf(django.VERSION >= (4,), "Django>=4 handles missing dirs itself.")
-    @override_settings(
-        STATICFILES_DIRS=[PATH_DOES_NOT_EXIST],
-    )
-    def test_panel_check_errors(self):
-        messages = run_checks()
-        self.assertEqual(
-            messages,
-            [
-                Warning(
-                    "debug_toolbar requires the STATICFILES_DIRS directories to exist.",
-                    hint="Running manage.py collectstatic may help uncover the issue.",
-                    id="debug_toolbar.staticfiles.W001",
-                )
-            ],
-        )
-
     @override_settings(DEBUG_TOOLBAR_PANELS=[])
     def test_panels_is_empty(self):
         errors = run_checks()
@@ -119,7 +100,7 @@ class ChecksTestCase(SimpleTestCase):
                     hint="Set DEBUG_TOOLBAR_PANELS to a non-empty list in your "
                     "settings.py.",
                     id="debug_toolbar.W005",
-                )
+                ),
             ],
         )
 
@@ -134,21 +115,27 @@ class ChecksTestCase(SimpleTestCase):
                         "django.template.context_processors.request",
                         "django.contrib.auth.context_processors.auth",
                         "django.contrib.messages.context_processors.messages",
-                    ]
+                    ],
+                    "loaders": [
+                        "django.template.loaders.filesystem.Loader",
+                    ],
                 },
             },
         ]
     )
-    def test_templates_is_using_app_dirs_false(self):
+    def test_check_w006_invalid(self):
         errors = run_checks()
         self.assertEqual(
             errors,
             [
                 Warning(
-                    "At least one DjangoTemplates TEMPLATES configuration "
-                    "needs to have APP_DIRS set to True.",
+                    "At least one DjangoTemplates TEMPLATES configuration needs "
+                    "to use django.template.loaders.app_directories.Loader or "
+                    "have APP_DIRS set to True.",
                     hint=(
-                        "Use APP_DIRS=True for at least one "
+                        "Include django.template.loaders.app_directories.Loader "
+                        'in ["OPTIONS"]["loaders"]. Alternatively use '
+                        "APP_DIRS=True for at least one "
                         "django.template.backends.django.DjangoTemplates "
                         "backend configuration."
                     ),
@@ -156,3 +143,174 @@ class ChecksTestCase(SimpleTestCase):
                 )
             ],
         )
+
+    @override_settings(
+        TEMPLATES=[
+            {
+                "NAME": "use_loaders",
+                "BACKEND": "django.template.backends.django.DjangoTemplates",
+                "APP_DIRS": False,
+                "OPTIONS": {
+                    "context_processors": [
+                        "django.template.context_processors.debug",
+                        "django.template.context_processors.request",
+                        "django.contrib.auth.context_processors.auth",
+                        "django.contrib.messages.context_processors.messages",
+                    ],
+                    "loaders": [
+                        "django.template.loaders.app_directories.Loader",
+                    ],
+                },
+            },
+            {
+                "NAME": "use_app_dirs",
+                "BACKEND": "django.template.backends.django.DjangoTemplates",
+                "APP_DIRS": True,
+                "OPTIONS": {
+                    "context_processors": [
+                        "django.template.context_processors.debug",
+                        "django.template.context_processors.request",
+                        "django.contrib.auth.context_processors.auth",
+                        "django.contrib.messages.context_processors.messages",
+                    ],
+                },
+            },
+        ]
+    )
+    def test_check_w006_valid(self):
+        self.assertEqual(run_checks(), [])
+
+    @override_settings(
+        TEMPLATES=[
+            {
+                "NAME": "use_loaders",
+                "BACKEND": "django.template.backends.django.DjangoTemplates",
+                "APP_DIRS": False,
+                "OPTIONS": {
+                    "context_processors": [
+                        "django.template.context_processors.debug",
+                        "django.template.context_processors.request",
+                        "django.contrib.auth.context_processors.auth",
+                        "django.contrib.messages.context_processors.messages",
+                    ],
+                    "loaders": [
+                        (
+                            "django.template.loaders.cached.Loader",
+                            [
+                                "django.template.loaders.filesystem.Loader",
+                                "django.template.loaders.app_directories.Loader",
+                            ],
+                        ),
+                    ],
+                },
+            },
+        ]
+    )
+    def test_check_w006_valid_nested_loaders(self):
+        self.assertEqual(run_checks(), [])
+
+    @patch("debug_toolbar.apps.mimetypes.guess_type")
+    def test_check_w007_valid(self, mocked_guess_type):
+        mocked_guess_type.return_value = ("text/javascript", None)
+        self.assertEqual(run_checks(), [])
+        mocked_guess_type.return_value = ("application/javascript", None)
+        self.assertEqual(run_checks(), [])
+
+    @patch("debug_toolbar.apps.mimetypes.guess_type")
+    def test_check_w007_invalid(self, mocked_guess_type):
+        mocked_guess_type.return_value = ("text/plain", None)
+        self.assertEqual(
+            run_checks(),
+            [
+                Warning(
+                    "JavaScript files are resolving to the wrong content type.",
+                    hint="The Django Debug Toolbar may not load properly while mimetypes are misconfigured. "
+                    "See the Django documentation for an explanation of why this occurs.\n"
+                    "https://docs.djangoproject.com/en/stable/ref/contrib/staticfiles/#static-file-development-view\n"
+                    "\n"
+                    "This typically occurs on Windows machines. The suggested solution is to modify "
+                    "HKEY_CLASSES_ROOT in the registry to specify the content type for JavaScript "
+                    "files.\n"
+                    "\n"
+                    "[HKEY_CLASSES_ROOT\\.js]\n"
+                    '"Content Type"="application/javascript"',
+                    id="debug_toolbar.W007",
+                )
+            ],
+        )
+
+    @patch("debug_toolbar.apps.reverse")
+    def test_debug_toolbar_installed_when_running_tests(self, reverse):
+        params = [
+            {
+                "debug": True,
+                "running_tests": True,
+                "show_callback_changed": True,
+                "urls_installed": False,
+                "errors": False,
+            },
+            {
+                "debug": False,
+                "running_tests": False,
+                "show_callback_changed": True,
+                "urls_installed": False,
+                "errors": False,
+            },
+            {
+                "debug": False,
+                "running_tests": True,
+                "show_callback_changed": False,
+                "urls_installed": False,
+                "errors": False,
+            },
+            {
+                "debug": False,
+                "running_tests": True,
+                "show_callback_changed": True,
+                "urls_installed": True,
+                "errors": False,
+            },
+            {
+                "debug": False,
+                "running_tests": True,
+                "show_callback_changed": True,
+                "urls_installed": False,
+                "errors": True,
+            },
+        ]
+        for config in params:
+            with self.subTest(**config):
+                config_setting = {
+                    "RENDER_PANELS": False,
+                    "IS_RUNNING_TESTS": config["running_tests"],
+                    "SHOW_TOOLBAR_CALLBACK": (
+                        (lambda *args: True)
+                        if config["show_callback_changed"]
+                        else "debug_toolbar.middleware.show_toolbar"
+                    ),
+                }
+                if config["urls_installed"]:
+                    reverse.side_effect = lambda *args: None
+                else:
+                    reverse.side_effect = NoReverseMatch()
+
+                with self.settings(
+                    DEBUG=config["debug"], DEBUG_TOOLBAR_CONFIG=config_setting
+                ):
+                    errors = debug_toolbar_installed_when_running_tests_check(None)
+                    if config["errors"]:
+                        self.assertEqual(len(errors), 1)
+                        self.assertEqual(errors[0].id, "debug_toolbar.E001")
+                    else:
+                        self.assertEqual(len(errors), 0)
+
+    @override_settings(
+        DEBUG_TOOLBAR_CONFIG={
+            "OBSERVE_REQUEST_CALLBACK": lambda request: False,
+            "IS_RUNNING_TESTS": False,
+        }
+    )
+    def test_observe_request_callback_specified(self):
+        errors = run_checks()
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0].id, "debug_toolbar.W008")

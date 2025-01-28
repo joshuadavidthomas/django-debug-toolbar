@@ -1,22 +1,4 @@
-.PHONY: flake8 example test coverage translatable_strings update_translations
-
-PRETTIER_TARGETS = '**/*.(css|js)'
-
-style: package-lock.json
-	isort .
-	black --target-version=py36 .
-	flake8
-	npx eslint --ignore-path .gitignore --fix .
-	npx prettier --ignore-path .gitignore --write $(PRETTIER_TARGETS)
-	! grep -r '\(style=\|onclick=\|<script>\|<style\)' debug_toolbar/templates/
-
-style_check: package-lock.json
-	isort -c .
-	black --target-version=py36 --check .
-	flake8
-	npx eslint --ignore-path .gitignore .
-	npx prettier --ignore-path .gitignore --check $(PRETTIER_TARGETS)
-	! grep -r '\(style=\|onclick=\|<script>\|<style\)' debug_toolbar/templates/
+.PHONY: example test coverage translatable_strings update_translations
 
 example:
 	python example/manage.py migrate --noinput
@@ -24,9 +6,8 @@ example:
 		--noinput --username="$(USER)" --email="$(USER)@mailinator.com"
 	python example/manage.py runserver
 
-package-lock.json: package.json
-	npm install
-	touch $@
+example_test:
+	python example/manage.py test example
 
 test:
 	DJANGO_SETTINGS_MODULE=tests.settings \

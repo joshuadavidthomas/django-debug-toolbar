@@ -29,9 +29,9 @@ default value is::
         'debug_toolbar.panels.sql.SQLPanel',
         'debug_toolbar.panels.staticfiles.StaticFilesPanel',
         'debug_toolbar.panels.templates.TemplatesPanel',
+        'debug_toolbar.panels.alerts.AlertsPanel',
         'debug_toolbar.panels.cache.CachePanel',
         'debug_toolbar.panels.signals.SignalsPanel',
-        'debug_toolbar.panels.logging.LoggingPanel',
         'debug_toolbar.panels.redirects.RedirectsPanel',
         'debug_toolbar.panels.profiling.ProfilingPanel',
     ]
@@ -54,7 +54,14 @@ Toolbar options
 
 * ``DISABLE_PANELS``
 
-  Default: ``{'debug_toolbar.panels.redirects.RedirectsPanel'}``
+  Default:
+
+  .. code-block:: python
+
+      {
+          "debug_toolbar.panels.profiling.ProfilingPanel",
+          "debug_toolbar.panels.redirects.RedirectsPanel",
+      }
 
   This setting is a set of the full Python paths to each panel that you
   want disabled (but still displayed) by default.
@@ -65,6 +72,19 @@ Toolbar options
 
   The toolbar searches for this string in the HTML and inserts itself just
   before.
+
+.. _IS_RUNNING_TESTS:
+
+* ``IS_RUNNING_TESTS``
+
+  Default: ``"test" in sys.argv``
+
+  This setting whether the application is running tests. If this resolves to
+  ``True``, the toolbar will prevent you from running tests. This should only
+  be changed if your test command doesn't include ``test`` or if you wish to
+  test your application with the toolbar configured. If you do wish to test
+  your application with the toolbar configured, set this setting to
+  ``False``.
 
 .. _RENDER_PANELS:
 
@@ -90,6 +110,8 @@ Toolbar options
   Default: ``25``
 
   The toolbar keeps up to this many results in memory.
+
+.. _ROOT_TAG_EXTRA_ATTRS:
 
 * ``ROOT_TAG_EXTRA_ATTRS``
 
@@ -122,6 +144,70 @@ Toolbar options
   requests. Since version 1.8, AJAX requests are checked in the middleware, not
   the callback. This allows reusing the callback to verify access to panel
   views requested via AJAX.
+
+  .. warning::
+
+     Please note that the debug toolbar isn't hardened for use in production
+     environments or on public servers. You should be aware of the implications
+     to the security of your servers when using your own callback. One known
+     implication is that it is possible to execute arbitrary SQL through the
+     SQL panel when the ``SECRET_KEY`` value is leaked somehow.
+
+  .. warning::
+
+     Do not use
+     ``DEBUG_TOOLBAR_CONFIG = {"SHOW_TOOLBAR_CALLBACK": lambda request: DEBUG}``
+     in your project's settings.py file. The toolbar expects to use
+     ``django.conf.settings.DEBUG``. Using your project's setting's ``DEBUG``
+     is likely to cause unexpected results when running your tests. This is because
+     Django automatically sets ``settings.DEBUG = False``, but your project's
+     setting's ``DEBUG`` will still be set to ``True``.
+
+.. _OBSERVE_REQUEST_CALLBACK:
+
+* ``OBSERVE_REQUEST_CALLBACK``
+
+  Default: ``'debug_toolbar.toolbar.observe_request'``
+
+  .. note::
+
+     This setting is deprecated in favor of the ``UPDATE_ON_FETCH`` and
+     ``SHOW_TOOLBAR_CALLBACK`` settings.
+
+  This is the dotted path to a function used for determining whether the
+  toolbar should update on AJAX requests or not. The default implementation
+  always returns ``True``.
+
+.. _TOOLBAR_LANGUAGE:
+
+* ``TOOLBAR_LANGUAGE``
+
+  Default: ``None``
+
+  The language used to render the toolbar. If no value is supplied, then the
+  application's current language will be used. This setting can be used to
+  render the toolbar in a different language than what the application is
+  rendered in. For example, if you wish to use English for development,
+  but want to render your application in French, you would set this to
+  ``"en-us"`` and :setting:`LANGUAGE_CODE` to ``"fr"``.
+
+.. _UPDATE_ON_FETCH:
+
+* ``UPDATE_ON_FETCH``
+
+  Default: ``False``
+
+  This controls whether the toolbar should update to the latest AJAX
+  request when it occurs. This is especially useful when using htmx
+  boosting or similar JavaScript techniques.
+
+.. _DEFAULT_THEME:
+
+* ``DEFAULT_THEME``
+
+  Default: ``"auto"``
+
+  This controls which theme will use the toolbar by default.
 
 Panel options
 ~~~~~~~~~~~~~
@@ -222,6 +308,18 @@ Panel options
     WHERE "auth_user"."username" = '''test_username'''
     LIMIT 21
 
+* ``PROFILER_CAPTURE_PROJECT_CODE``
+
+  Default: ``True``
+
+  Panel: profiling
+
+  When enabled this setting will include all project function calls in the
+  panel. Project code is defined as files in the path defined at
+  ``settings.BASE_DIR``. If you install dependencies under
+  ``settings.BASE_DIR`` in a directory other than ``sites-packages`` or
+  ``dist-packages`` you may need to disable this setting.
+
 * ``PROFILER_MAX_DEPTH``
 
   Default: ``10``
@@ -230,6 +328,20 @@ Panel options
 
   This setting affects the depth of function calls in the profiler's
   analysis.
+
+* ``PROFILER_THRESHOLD_RATIO``
+
+  Default: ``8``
+
+  Panel: profiling
+
+  This setting affects the which calls are included in the profile. A higher
+  value will include more function calls. A lower value will result in a faster
+  render of the profiling panel, but will exclude data.
+
+  This value is used to determine the threshold of cumulative time to include
+  the nested functions. The threshold is calculated by the root calls'
+  cumulative time divided by this ratio.
 
 * ``SHOW_TEMPLATE_CONTEXT``
 
@@ -272,3 +384,26 @@ Here's what a slightly customized toolbar configuration might look like::
         # Panel options
         'SQL_WARNING_THRESHOLD': 100,   # milliseconds
     }
+
+Theming support
+---------------
+The debug toolbar uses CSS variables to define fonts and colors. This allows
+changing fonts and colors without having to override many individual CSS rules.
+For example, if you preferred Roboto instead of the default list of fonts you
+could add a **debug_toolbar/base.html** template override to your project:
+
+.. code-block:: django
+
+    {% extends 'debug_toolbar/base.html' %}
+
+    {% block css %}{{ block.super }}
+    <style>
+        :root {
+            --djdt-font-family-primary: 'Roboto', sans-serif;
+        }
+    </style>
+    {% endblock %}
+
+The list of CSS variables are defined at
+`debug_toolbar/static/debug_toolbar/css/toolbar.css
+<https://github.com/django-commons/django-debug-toolbar/blob/main/debug_toolbar/static/debug_toolbar/css/toolbar.css>`_

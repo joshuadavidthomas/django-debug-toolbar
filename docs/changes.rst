@@ -1,16 +1,346 @@
 Change log
 ==========
 
-Next version
-------------
+Pending
+-------
+
+* Added Django 5.2 to the tox matrix.
+
+5.0.1 (2025-01-13)
+------------------
+* Fixing the build and release process. No functional changes.
+
+5.0.0 (2025-01-11)
+------------------
+
+* Added Python 3.13 to the CI matrix.
+* Removed support for Python 3.8 as it has reached end of life.
+* Converted to Django Commons PyPI release process.
+* Fixed a crash which occurred when using non-``str`` static file values.
+* Documented experimental async support.
+* Improved troubleshooting doc for incorrect mime types for .js static files
+
+Please see everything under 5.0.0-alpha as well.
+
+5.0.0-alpha (2024-09-01)
+------------------------
+
+* Support async applications and ASGI from
+  `Google Summer of Code Project 2024
+  <https://summerofcode.withgoogle.com/programs/2024/projects/iXVvyGYp>`__.
+* Added Django 5.1 to the CI matrix.
+* Added support for the ``LoginRequiredMiddleware`` introduced in Django 5.1.
+* Support select and explain buttons for ``UNION`` queries on PostgreSQL.
+* Fixed internal toolbar requests being instrumented if the Django setting
+  ``FORCE_SCRIPT_NAME`` was set.
+* Increase opacity of show Debug Toolbar handle to improve accessibility.
+* Changed the ``RedirectsPanel`` to be async compatible.
+* Increased the contrast of text with dark mode enabled.
+* Add translations for Bulgarian and Korean.
+* Update translations for several languages.
+* Include new translatable strings for translation.
+* Fixed a crash which happened in the fallback case when session keys cannot be
+  sorted.
+
+4.4.6 (2024-07-10)
+------------------
+
+* Changed ordering (and grammatical number) of panels and their titles in
+  documentation to match actual panel ordering and titles.
+* Skipped processing the alerts panel when response isn't a HTML response.
+
+4.4.5 (2024-07-05)
+------------------
+
+* Avoided crashing when the alerts panel was skipped.
+* Removed the inadvertently added hard dependency on Jinja2.
+
+4.4.4 (2024-07-05)
+------------------
+
+* Added check for StreamingHttpResponse in alerts panel.
+* Instrument the Django Jinja2 template backend. This only instruments
+  the immediate template that's rendered. It will not provide stats on
+  any parent templates.
+
+4.4.3 (2024-07-04)
+------------------
+
+* Added alerts panel with warning when form is using file fields
+  without proper encoding type.
+* Fixed overriding font-family for both light and dark themes.
+* Restored compatibility with ``iptools.IpRangeList``.
+* Limit ``E001`` check to likely error cases when the
+  ``SHOW_TOOLBAR_CALLBACK`` has changed, but the toolbar's URL
+  paths aren't installed.
+* Introduce helper function ``debug_toolbar_urls`` to
+  simplify installation.
+* Moved "1rem" height/width for SVGs to CSS properties.
+
+4.4.2 (2024-05-27)
+------------------
+
+* Removed some CSS which wasn't carefully limited to the toolbar's elements.
+* Stopped assuming that ``INTERNAL_IPS`` is a list.
+* Added a section to the installation docs about running tests in projects
+  where the toolbar is being used.
+
+
+4.4.1 (2024-05-26)
+------------------
+
+* Pin metadata version to 2.2 to be compatible with Jazzband release
+  process.
+
+4.4.0 (2024-05-26)
+------------------
+
+* Raised the minimum Django version to 4.2.
+* Automatically support Docker rather than having the developer write a
+  workaround for ``INTERNAL_IPS``.
+* Display a better error message when the toolbar's requests
+  return invalid json.
+* Render forms with ``as_div`` to silence Django 5.0 deprecation warnings.
+* Stayed on top of pre-commit hook updates.
+* Added :doc:`architecture documentation <architecture>` to help
+  on-board new contributors.
+* Removed the static file path validation check in
+  :class:`StaticFilesPanel <debug_toolbar.panels.staticfiles.StaticFilesPanel>`
+  since that check is made redundant by a similar check in Django 4.0 and
+  later.
+* Deprecated the ``OBSERVE_REQUEST_CALLBACK`` setting and added check
+  ``debug_toolbar.W008`` to warn when it is present in
+  ``DEBUG_TOOLBAR_SETTINGS``.
+* Add a note on the profiling panel about using Python 3.12 and later
+  about needing ``--nothreading``
+* Added ``IS_RUNNING_TESTS`` setting to allow overriding the
+  ``debug_toolbar.E001`` check to avoid including the toolbar when running
+  tests.
+* Fixed the bug causing ``'djdt' is not a registered namespace`` and updated
+  docs to help in initial configuration while running tests.
+* Added a link in the installation docs to a more complete installation
+  example in the example app.
+* Added check to prevent the toolbar from being installed when tests
+  are running.
+* Added test to example app and command to run the example app's tests.
+* Implemented dark mode theme and button to toggle the theme,
+  introduced the ``DEFAULT_THEME`` setting which sets the default theme
+  to use.
+
+4.3.0 (2024-02-01)
+------------------
+
+* Dropped support for Django 4.0.
+* Added Python 3.12 to test matrix.
+* Removed outdated third-party panels from the list.
+* Avoided the unnecessary work of recursively quoting SQL parameters.
+* Postponed context process in templates panel to include lazy evaluated
+  content.
+* Fixed template panel to avoid evaluating ``LazyObject`` when not already
+  evaluated.
+* Added support for Django 5.0.
+* Refactor the ``utils.get_name_from_obj`` to simulate the behavior of
+  ``django.contrib.admindocs.utils.get_view_name``.
+* Switched from black to the `ruff formatter
+  <https://astral.sh/blog/the-ruff-formatter>`__.
+* Changed the default position of the toolbar from top to the upper top
+  position.
+* Added the setting, ``UPDATE_ON_FETCH`` to control whether the
+  toolbar automatically updates to the latest AJAX request or not.
+  It defaults to ``False``.
+
+4.2.0 (2023-08-10)
+------------------
+
+* Adjusted app directories system check to allow for nested template loaders.
+* Switched from flake8, isort and pyupgrade to `ruff
+  <https://beta.ruff.rs/>`__.
+* Converted cookie keys to lowercase. Fixed the ``samesite`` argument to
+  ``djdt.cookie.set``.
+* Converted ``StaticFilesPanel`` to no longer use a thread collector. Instead,
+  it collects the used static files in a ``ContextVar``.
+* Added check ``debug_toolbar.W007`` to warn when JavaScript files are
+  resolving to the wrong content type.
+* Fixed SQL statement recording under PostgreSQL for queries encoded as byte
+  strings.
+* Patch the ``CursorWrapper`` class with a mixin class to support multiple
+  base wrapper classes.
+
+4.1.0 (2023-05-15)
+------------------
+
+* Improved SQL statement formatting performance.  Additionally, fixed the
+  indentation of ``CASE`` statements and stopped simplifying ``.count()``
+  queries.
+* Added support for the new STORAGES setting in Django 4.2 for static files.
+* Added support for theme overrides.
+* Reworked the cache panel instrumentation code to no longer attempt to undo
+  monkey patching of cache methods, as that turned out to be fragile in the
+  presence of other code which also monkey patches those methods.
+* Update all timing code that used :py:func:`time.time()` to use
+  :py:func:`time.perf_counter()` instead.
+* Made the check on ``request.META["wsgi.multiprocess"]`` optional, but
+  defaults to forcing the toolbar to render the panels on each request. This
+  is because it's likely an ASGI application that's serving the responses
+  and that's more likely to be an incompatible setup. If you find that this
+  is incorrect for you in particular, you can use the ``RENDER_PANELS``
+  setting to forcibly control this logic.
+
+4.0.0 (2023-04-03)
+------------------
+
+* Added Django 4.2 to the CI.
+* Dropped support for Python 3.7.
+* Fixed PostgreSQL raw query with a tuple parameter during on explain.
+* Use ``TOOLBAR_LANGUAGE`` setting when rendering individual panels
+  that are loaded via AJAX.
+* Add decorator for rendering toolbar views with ``TOOLBAR_LANGUAGE``.
+* Removed the logging panel. The panel's implementation was too complex, caused
+  memory leaks and sometimes very verbose and hard to silence output in some
+  environments (but not others). The maintainers judged that time and effort is
+  better invested elsewhere.
+* Added support for psycopg3.
+* When ``ENABLE_STACKTRACE_LOCALS`` is ``True``, the stack frames' locals dicts
+  will be converted to strings when the stack trace is captured rather when it
+  is rendered, so that the correct values will be displayed in the rendered
+  stack trace, as they may have changed between the time the stack trace was
+  captured and when it is rendered.
+
+3.8.1 (2022-12-03)
+------------------
+
+* Fixed release process by re-adding twine to release dependencies. No
+  functional change.
+
+3.8.0 (2022-12-03)
+------------------
+
+* Added protection against division by 0 in timer.js
+* Auto-update History panel for JavaScript ``fetch`` requests.
+* Support `HTMX boosting <https://htmx.org/docs/#boosting>`__ and
+  `Turbo <https://turbo.hotwired.dev/>`__ pages.
+* Simplify logic for ``Panel.enabled`` property by checking cookies earlier.
+* Include panel scripts in content when ``RENDER_PANELS`` is set to True.
+* Create one-time mouseup listener for each mousedown when dragging the
+  handle.
+* Update package metadata to use Hatchling.
+* Fix highlighting on history panel so odd rows are highlighted when
+  selected.
+* Formalize support for Python 3.11.
+* Added ``TOOLBAR_LANGUAGE`` setting.
+
+3.7.0 (2022-09-25)
+------------------
+
+* Added Profiling panel setting ``PROFILER_THRESHOLD_RATIO`` to give users
+  better control over how many function calls are included. A higher value
+  will include more data, but increase render time.
+* Update Profiling panel to include try to always include user code. This
+  code is more important to developers than dependency code.
+* Highlight the project function calls in the profiling panel.
+* Added Profiling panel setting ``PROFILER_CAPTURE_PROJECT_CODE`` to allow
+  users to disable the inclusion of all project code. This will be useful
+  to project setups that have dependencies installed under
+  ``settings.BASE_DIR``.
+* The toolbar's font stack now prefers system UI fonts. Tweaked paddings,
+  margins and alignments a bit in the CSS code.
+* Only sort the session dictionary when the keys are all strings. Fixes a
+  bug that causes the toolbar to crash when non-strings are used as keys.
+
+3.6.0 (2022-08-17)
+------------------
+
+* Remove decorator ``signed_data_view`` as it was causing issues with
+  `django-urlconfchecks <https://github.com/AliSayyah/django-urlconfchecks/>`__.
+* Added pygments to the test environment and fixed a crash when using the
+  template panel with Django 4.1 and pygments installed.
+* Stayed on top of pre-commit hook and GitHub actions updates.
+* Added some workarounds to avoid a Chromium warning which was worrisome to
+  developers.
+* Avoided using deprecated Selenium methods to find elements.
+* Raised the minimum Django version from 3.2 to 3.2.4 so that we can take
+  advantage of backported improvements to the cache connection handler.
+
+3.5.0 (2022-06-23)
+------------------
+
+* Properly implemented tracking and display of PostgreSQL transactions.
+* Removed third party panels which have been archived on GitHub.
+* Added Django 4.1b1 to the CI matrix.
+* Stopped crashing when ``request.GET`` and ``request.POST`` are neither
+  dictionaries nor ``QueryDict`` instances. Using anything but ``QueryDict``
+  instances isn't a valid use of Django but, again, django-debug-toolbar
+  shouldn't crash.
+* Fixed the cache panel to work correctly in the presence of concurrency by
+  avoiding the use of signals.
+* Reworked the cache panel instrumentation mechanism to monkey patch methods on
+  the cache instances directly instead of replacing cache instances with
+  wrapper classes.
+* Added a :meth:`debug_toolbar.panels.Panel.ready` class method that panels can
+  override to perform any initialization or instrumentation that needs to be
+  done unconditionally at startup time.
+* Added pyflame (for flame graphs) to the list of third-party panels.
+* Fixed the cache panel to correctly count cache misses from the get_many()
+  cache method.
+* Removed some obsolete compatibility code from the stack trace recording code.
+* Added a new mechanism for capturing stack traces which includes per-request
+  caching to reduce expensive file system operations.  Updated the cache and
+  SQL panels to record stack traces using this new mechanism.
+* Changed the ``docs`` tox environment to allow passing positional arguments.
+  This allows e.g. building a HTML version of the docs using ``tox -e docs
+  html``.
+* Stayed on top of pre-commit hook updates.
+* Replaced ``OrderedDict`` by ``dict`` where possible.
+
+Deprecated features
+~~~~~~~~~~~~~~~~~~~
+
+* The ``debug_toolbar.utils.get_stack()`` and
+  ``debug_toolbar.utils.tidy_stacktrace()`` functions are deprecated in favor
+  of the new ``debug_toolbar.utils.get_stack_trace()`` function.  They will
+  removed in the next major version of the Debug Toolbar.
+
+3.4.0 (2022-05-03)
+------------------
+
+* Fixed issue of stacktrace having frames that have no path to the file,
+  but are instead a string of the code such as
+  ``'<frozen importlib._bootstrap>'``.
+* Renamed internal SQL tracking context var from ``recording`` to
+  ``allow_sql``.
+
+3.3.0 (2022-04-28)
+------------------
+
+* Track calls to :py:meth:`django.core.cache.cache.get_or_set`.
+* Removed support for Django < 3.2.
+* Updated check ``W006`` to look for
+  ``django.template.loaders.app_directories.Loader``.
+* Reset settings when overridden in tests. Packages or projects using
+  django-debug-toolbar can now use Django’s test settings tools, like
+  ``@override_settings``, to reconfigure the toolbar during tests.
+* Optimize rendering of SQL panel, saving about 30% of its run time.
+* New records in history panel will flash green.
+* Automatically update History panel on AJAX requests from client.
+
+3.2.4 (2021-12-15)
+------------------
+
+* Revert PR 1426 - Fixes issue with SQL parameters having leading and
+  trailing characters stripped away.
+
+3.2.3 (2021-12-12)
+------------------
 
 * Changed cache monkey-patching for Django 3.2+ to iterate over existing
   caches and patch them individually rather than attempting to patch
-  ``django.core.caches`` as a whole. The ``middleware.cache`` is still
+  ``django.core.cache`` as a whole. The ``middleware.cache`` is still
   being patched as a whole in order to attempt to catch any cache
   usages before ``enable_instrumentation`` is called.
 * Add check ``W006`` to warn that the toolbar is incompatible with
   ``TEMPLATES`` settings configurations with ``APP_DIRS`` set to ``False``.
+* Create ``urls`` module and update documentation to no longer require
+  importing the toolbar package.
 
 
 3.2.2 (2021-08-14)
@@ -126,7 +456,7 @@ Next version
   ``localStorage``.
 * Updated the code to avoid a few deprecation warnings and resource warnings.
 * Started loading JavaScript as ES6 modules.
-* Added support for :meth:`cache.touch() <django.core.caches.cache.touch>` when
+* Added support for :meth:`cache.touch() <django.core.cache.cache.touch>` when
   using django-debug-toolbar.
 * Eliminated more inline CSS.
 * Updated ``tox.ini`` and ``Makefile`` to use isort>=5.

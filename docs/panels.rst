@@ -22,8 +22,8 @@ snapshot of the toolbar to view that request's stats.
    ``True`` or if the server runs with multiple processes, the History Panel
    will be disabled.
 
-Version
-~~~~~~~
+Versions
+~~~~~~~~
 
 .. class:: debug_toolbar.panels.versions.VersionsPanel
 
@@ -69,19 +69,30 @@ SQL
 
 SQL queries including time to execute and links to EXPLAIN each query.
 
-Template
-~~~~~~~~
-
-.. class:: debug_toolbar.panels.templates.TemplatesPanel
-
-Templates and context used, and their template paths.
-
 Static files
 ~~~~~~~~~~~~
 
 .. class:: debug_toolbar.panels.staticfiles.StaticFilesPanel
 
 Used static files and their locations (via the ``staticfiles`` finders).
+
+Templates
+~~~~~~~~~
+
+.. class:: debug_toolbar.panels.templates.TemplatesPanel
+
+Templates and context used, and their template paths.
+
+Alerts
+~~~~~~~
+
+.. class:: debug_toolbar.panels.alerts.AlertsPanel
+
+This panel shows alerts for a set of pre-defined cases:
+
+- Alerts when the response has a form without the
+  ``enctype="multipart/form-data"`` attribute and the form contains
+  a file input.
 
 Cache
 ~~~~~
@@ -90,19 +101,12 @@ Cache
 
 Cache queries. Is incompatible with Django's per-site caching.
 
-Signal
-~~~~~~
+Signals
+~~~~~~~
 
 .. class:: debug_toolbar.panels.signals.SignalsPanel
 
 List of signals and receivers.
-
-Logging
-~~~~~~~
-
-.. class:: debug_toolbar.panels.logging.LoggingPanel
-
-Logging output via Python's built-in :mod:`logging` module.
 
 Redirects
 ~~~~~~~~~
@@ -130,6 +134,16 @@ Profiling information for the processing of the request.
 This panel is included but inactive by default. You can activate it by default
 with the ``DISABLE_PANELS`` configuration option.
 
+For version of Python 3.12 and later you need to use
+``python -m manage runserver --nothreading``
+Concurrent requests don't work with the profiling panel.
+
+The panel will include all function calls made by your project if you're using
+the setting ``settings.BASE_DIR`` to point to your project's root directory.
+If a function is in a file within that directory and does not include
+``"/site-packages/"`` or ``"/dist-packages/"`` in the path, it will be
+included.
+
 Third-party panels
 ------------------
 
@@ -141,46 +155,17 @@ Third-party panels
 
 If you'd like to add a panel to this list, please submit a pull request!
 
-Flamegraph
-~~~~~~~~~~
+Flame Graphs
+~~~~~~~~~~~~
 
-URL: https://github.com/23andMe/djdt-flamegraph
+URL: https://gitlab.com/living180/pyflame
 
-Path: ``djdt_flamegraph.FlamegraphPanel``
+Path: ``pyflame.djdt.panel.FlamegraphPanel``
 
-Generates a flame graph from your current request.
-
-Haystack
-~~~~~~~~
-
-URL: https://github.com/streeter/django-haystack-panel
-
-Path: ``haystack_panel.panel.HaystackDebugPanel``
-
-See queries made by your Haystack_ backends.
-
-.. _Haystack: http://haystacksearch.org/
-
-HTML Tidy/Validator
-~~~~~~~~~~~~~~~~~~~
-
-URL: https://github.com/joymax/django-dtpanel-htmltidy
-
-Path: ``debug_toolbar_htmltidy.panels.HTMLTidyDebugPanel``
-
-HTML Tidy or HTML Validator is a custom panel that validates your HTML and
-displays warnings and errors.
-
-Inspector
-~~~~~~~~~
-
-URL: https://github.com/santiagobasulto/debug-inspector-panel
-
-Path: ``inspector_panel.panels.inspector.InspectorPanel``
-
-Retrieves and displays information you specify using the ``debug`` statement.
-Inspector panel also logs to the console by default, but may be instructed not
-to.
+Displays a flame graph for visualizing the performance profile of the request,
+using Brendan Gregg's `flamegraph.pl script
+<https://github.com/brendangregg/FlameGraph/flamegraph.pl>`_ to perform the
+heavy lifting.
 
 LDAP Tracing
 ~~~~~~~~~~~~
@@ -235,6 +220,17 @@ Path: ``debug_toolbar_mongo.panel.MongoDebugPanel``
 
 Adds MongoDB debugging information.
 
+MrBenn Toolbar Plugin
+~~~~~~~~~~~~~~~~~~~~~
+
+URL: https://github.com/andytwoods/mrbenn
+
+Path: ``mrbenn_panel.panel.MrBennPanel``
+
+Allows you to quickly open template files and views directly in your IDE!
+In addition to the path above, you need to add ``mrbenn_panel`` in
+``INSTALLED_APPS``
+
 Neo4j
 ~~~~~
 
@@ -274,18 +270,6 @@ Path: ``requests_panel.panel.RequestsDebugPanel``
 
 Lists HTTP requests made with the popular `requests <https://requests.readthedocs.io/>`_ library.
 
-Sites
-~~~~~
-
-URL: https://github.com/elvard/django-sites-toolbar
-
-Path: ``sites_toolbar.panels.SitesDebugPanel``
-
-Browse Sites registered in ``django.contrib.sites`` and switch between them.
-Useful to debug project when you use `django-dynamicsites
-<https://bitbucket.org/uysrc/django-dynamicsites/src>`_ which sets SITE_ID
-dynamically.
-
 Template Profiler
 ~~~~~~~~~~~~~~~~~
 
@@ -305,15 +289,6 @@ URL: https://github.com/orf/django-debug-toolbar-template-timings
 Path: ``template_timings_panel.panels.TemplateTimings.TemplateTimings``
 
 Displays template rendering times for your Django application.
-
-User
-~~~~
-
-URL: https://github.com/playfire/django-debug-toolbar-user-panel
-
-Path: ``debug_toolbar_user_panel.panels.UserPanel``
-
-Easily switch between logged in users, see properties of current user.
 
 VCS Info
 ~~~~~~~~
@@ -341,9 +316,18 @@ Third-party panels must subclass :class:`~debug_toolbar.panels.Panel`,
 according to the public API described below. Unless noted otherwise, all
 methods are optional.
 
-Panels can ship their own templates, static files and views. All views should
-be decorated with ``debug_toolbar.decorators.require_show_toolbar`` to prevent
-unauthorized access. There is no public CSS API at this time.
+Panels can ship their own templates, static files and views.
+
+Any views defined for the third-party panel use the following decorators:
+
+- ``debug_toolbar.decorators.require_show_toolbar`` - Prevents unauthorized
+  access to the view.
+- ``debug_toolbar.decorators.render_with_toolbar_language`` - Supports
+  internationalization for any content rendered by the view. This will render
+  the response with the :ref:`TOOLBAR_LANGUAGE <TOOLBAR_LANGUAGE>` rather than
+  :setting:`LANGUAGE_CODE`.
+
+There is no public CSS API at this time.
 
 .. autoclass:: debug_toolbar.panels.Panel
 
@@ -361,6 +345,8 @@ unauthorized access. There is no public CSS API at this time.
 
     .. autoattribute:: debug_toolbar.panels.Panel.scripts
 
+    .. automethod:: debug_toolbar.panels.Panel.ready
+
     .. automethod:: debug_toolbar.panels.Panel.get_urls
 
     .. automethod:: debug_toolbar.panels.Panel.enable_instrumentation
@@ -373,7 +359,11 @@ unauthorized access. There is no public CSS API at this time.
 
     .. automethod:: debug_toolbar.panels.Panel.process_request
 
+    .. automethod:: debug_toolbar.panels.Panel.generate_server_timing
+
     .. automethod:: debug_toolbar.panels.Panel.generate_stats
+
+    .. automethod:: debug_toolbar.panels.Panel.get_headers
 
     .. automethod:: debug_toolbar.panels.Panel.run_checks
 
@@ -404,7 +394,9 @@ common methods available.
     :param value: The value to be set.
 
     :param options: The options for the value to be set. It should contain the
-        properties ``expires`` and ``path``.
+        properties ``expires`` and ``path``. The properties ``domain``,
+        ``secure`` and ``samesite`` are also supported. ``samesite`` defaults
+        to ``lax`` if not provided.
 
 .. js:function:: djdt.hide_toolbar
 
@@ -412,7 +404,10 @@ common methods available.
 
 .. js:function:: djdt.show_toolbar
 
-    Shows the toolbar.
+    Shows the toolbar. This can be used to re-render the toolbar when reloading the
+    entire DOM. For example, then using `HTMX's boosting`_.
+
+.. _HTMX's boosting: https://htmx.org/docs/#boosting
 
 Events
 ^^^^^^

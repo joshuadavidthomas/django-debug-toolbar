@@ -1,14 +1,11 @@
-import os
-import unittest
+from pathlib import Path
 
-import django
 from django.conf import settings
 from django.contrib.staticfiles import finders
-from django.test.utils import override_settings
+from django.shortcuts import render
+from django.test import AsyncRequestFactory, RequestFactory
 
 from ..base import BaseTestCase
-
-PATH_DOES_NOT_EXIST = os.path.join(settings.BASE_DIR, "tests", "invalid_static")
 
 
 class StaticFilesPanelTestCase(BaseTestCase):
@@ -26,12 +23,24 @@ class StaticFilesPanelTestCase(BaseTestCase):
         )
         self.assertEqual(self.panel.num_used, 0)
         self.assertNotEqual(self.panel.num_found, 0)
-        self.assertEqual(
-            self.panel.get_staticfiles_apps(), ["django.contrib.admin", "debug_toolbar"]
-        )
+        expected_apps = ["django.contrib.admin", "debug_toolbar"]
+        if settings.USE_GIS:
+            expected_apps = ["django.contrib.gis"] + expected_apps
+        self.assertEqual(self.panel.get_staticfiles_apps(), expected_apps)
         self.assertEqual(
             self.panel.get_staticfiles_dirs(), finders.FileSystemFinder().locations
         )
+
+    async def test_store_staticfiles_with_async_context(self):
+        async def get_response(request):
+            # template contains one static file
+            return render(request, "staticfiles/async_static.html")
+
+        self._get_response = get_response
+        async_request = AsyncRequestFactory().get("/")
+        response = await self.panel.process_request(async_request)
+        self.panel.generate_stats(self.request, response)
+        self.assertEqual(self.panel.num_used, 1)
 
     def test_insert_content(self):
         """
@@ -52,31 +61,18 @@ class StaticFilesPanelTestCase(BaseTestCase):
         )
         self.assertValidHTML(content)
 
-    @unittest.skipIf(django.VERSION >= (4,), "Django>=4 handles missing dirs itself.")
-    @override_settings(
-        STATICFILES_DIRS=[PATH_DOES_NOT_EXIST] + settings.STATICFILES_DIRS,
-        STATIC_ROOT=PATH_DOES_NOT_EXIST,
-    )
-    def test_finder_directory_does_not_exist(self):
-        """Misconfigure the static files settings and verify the toolbar runs.
+    def test_path(self):
+        def get_response(request):
+            # template contains one static file
+            return render(
+                request,
+                "staticfiles/path.html",
+                {"path": Path("additional_static/base.css")},
+            )
 
-        The test case is that the STATIC_ROOT is in STATICFILES_DIRS and that
-        the directory of STATIC_ROOT does not exist.
-        """
-        response = self.panel.process_request(self.request)
+        self._get_response = get_response
+        request = RequestFactory().get("/")
+        response = self.panel.process_request(request)
         self.panel.generate_stats(self.request, response)
-        content = self.panel.content
-        self.assertIn(
-            "django.contrib.staticfiles.finders.AppDirectoriesFinder", content
-        )
-        self.assertNotIn(
-            "django.contrib.staticfiles.finders.FileSystemFinder (2 files)", content
-        )
-        self.assertEqual(self.panel.num_used, 0)
-        self.assertNotEqual(self.panel.num_found, 0)
-        self.assertEqual(
-            self.panel.get_staticfiles_apps(), ["django.contrib.admin", "debug_toolbar"]
-        )
-        self.assertEqual(
-            self.panel.get_staticfiles_dirs(), finders.FileSystemFinder().locations
-        )
+        self.assertEqual(self.panel.num_used, 1)
+        self.assertIn('"/static/additional_static/base.css"', self.panel.content)

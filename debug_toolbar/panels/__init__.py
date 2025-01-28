@@ -1,3 +1,4 @@
+from django.core.handlers.asgi import ASGIRequest
 from django.template.loader import render_to_string
 
 from debug_toolbar import settings as dt_settings
@@ -8,6 +9,8 @@ class Panel:
     """
     Base class for panels.
     """
+
+    is_async = False
 
     def __init__(self, toolbar, get_response):
         self.toolbar = toolbar
@@ -20,7 +23,16 @@ class Panel:
         return self.__class__.__name__
 
     @property
-    def enabled(self):
+    def enabled(self) -> bool:
+        # check if the panel is async compatible
+        if not self.is_async and isinstance(self.toolbar.request, ASGIRequest):
+            return False
+
+        # The user's cookies should override the default value
+        cookie_value = self.toolbar.request.COOKIES.get("djdt" + self.panel_id)
+        if cookie_value is not None:
+            return cookie_value == "on"
+
         # Check to see if settings has a default value for it
         disabled_panels = dt_settings.get_config()["DISABLE_PANELS"]
         panel_path = get_name_from_obj(self)
@@ -28,16 +40,10 @@ class Panel:
         # panel module, but can be disabled without panel in the path.
         # For that reason, replace .panel. in the path and check for that
         # value in the disabled panels as well.
-        disable_panel = (
-            panel_path in disabled_panels
-            or panel_path.replace(".panel.", ".") in disabled_panels
+        return (
+            panel_path not in disabled_panels
+            and panel_path.replace(".panel.", ".") not in disabled_panels
         )
-        if disable_panel:
-            default = "off"
-        else:
-            default = "on"
-        # The user's cookies should override the default value
-        return self.toolbar.request.COOKIES.get("djdt" + self.panel_id, default) == "on"
 
     # Titles and content
 
@@ -87,7 +93,7 @@ class Panel:
         Template used to render :attr:`content`.
 
         Mandatory, unless the panel sets :attr:`has_content` to ``False`` or
-        overrides `attr`:content`.
+        overrides :attr:`content`.
         """
         raise NotImplementedError
 
@@ -114,6 +120,18 @@ class Panel:
         """
         return []
 
+    # Panel early initialization
+
+    @classmethod
+    def ready(cls):
+        """
+        Perform early initialization for the panel.
+
+        This should only include initialization or instrumentation that needs to
+        be done unconditionally for the panel regardless of whether it is
+        enabled for a particular request.  It should be idempotent.
+        """
+
     # URLs for panel-specific views
 
     @classmethod
@@ -136,6 +154,9 @@ class Panel:
 
         Unless the toolbar or this panel is disabled, this method will be
         called early in ``DebugToolbarMiddleware``. It should be idempotent.
+
+        Add the ``aenable_instrumentation``  method to a panel subclass
+        to support async logic for instrumentation.
         """
 
     def disable_instrumentation(self):
@@ -192,15 +213,40 @@ class Panel:
         """
         return self.get_response(request)
 
+    def get_headers(self, request):
+        """
+        Get headers the panel needs to set.
+
+        Called after :meth:`process_request
+        <debug_toolbar.panels.Panel.generate_stats>` and
+        :meth:`process_request<debug_toolbar.panels.Panel.generate_stats>`
+
+        Header values will be appended if multiple panels need to set it.
+
+        By default it sets the Server-Timing header.
+
+        Return dict of headers to be appended.
+        """
+        headers = {}
+        stats = self.get_server_timing_stats()
+        if stats:
+            headers["Server-Timing"] = ", ".join(
+                # example: `SQLPanel_sql_time;dur=0;desc="SQL 0 queries"`
+                '{}_{};dur={};desc="{}"'.format(
+                    self.panel_id, key, record.get("value"), record.get("title")
+                )
+                for key, record in stats.items()
+            )
+        return headers
+
     def generate_stats(self, request, response):
         """
-        Called after :meth:`process_request
-        <debug_toolbar.panels.Panel.process_request>`, but may not be executed
-        on every request. This will only be called if the toolbar will be
-        inserted into the request.
-
         Write panel logic related to the response there. Post-process data
         gathered while the view executed. Save data with :meth:`record_stats`.
+
+        Called after :meth:`process_request
+        <debug_toolbar.panels.Panel.process_request>`.
+
 
         Does not return a value.
         """
@@ -223,6 +269,6 @@ class Panel:
         This will be called as a part of the Django checks system when the
         application is being setup.
 
-        Return a list of :class: `django.core.checks.CheckMessage` instances.
+        Return a list of :class:`django.core.checks.CheckMessage` instances.
         """
         return []

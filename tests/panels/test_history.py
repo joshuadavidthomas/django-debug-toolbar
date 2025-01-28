@@ -1,9 +1,9 @@
+import copy
 import html
 
 from django.test import RequestFactory, override_settings
 from django.urls import resolve, reverse
 
-from debug_toolbar.forms import SignedDataForm
 from debug_toolbar.toolbar import DebugToolbar
 
 from ..base import BaseTestCase, IntegrationTestCase
@@ -75,9 +75,9 @@ class HistoryViewsTestCase(IntegrationTestCase):
         "SQLPanel",
         "StaticFilesPanel",
         "TemplatesPanel",
+        "AlertsPanel",
         "CachePanel",
         "SignalsPanel",
-        "LoggingPanel",
         "ProfilingPanel",
     }
 
@@ -93,25 +93,51 @@ class HistoryViewsTestCase(IntegrationTestCase):
         toolbar = list(DebugToolbar._store.values())[0]
         content = toolbar.get_panel_by_id("HistoryPanel").content
         self.assertIn("bar", content)
+        self.assertIn('name="exclude_history" value="True"', content)
 
     def test_history_sidebar_invalid(self):
         response = self.client.get(reverse("djdt:history_sidebar"))
         self.assertEqual(response.status_code, 400)
 
-        data = {"signed": SignedDataForm.sign({"store_id": "foo"}) + "invalid"}
-        response = self.client.get(reverse("djdt:history_sidebar"), data=data)
-        self.assertEqual(response.status_code, 400)
+    def test_history_headers(self):
+        """Validate the headers injected from the history panel."""
+        response = self.client.get("/json_view/")
+        store_id = list(DebugToolbar._store)[0]
+        self.assertEqual(response.headers["djdt-store-id"], store_id)
+
+    @override_settings(
+        DEBUG_TOOLBAR_CONFIG={"OBSERVE_REQUEST_CALLBACK": lambda request: False}
+    )
+    def test_history_headers_unobserved(self):
+        """Validate the headers aren't injected from the history panel."""
+        response = self.client.get("/json_view/")
+        self.assertNotIn("djdt-store-id", response.headers)
 
     def test_history_sidebar(self):
         """Validate the history sidebar view."""
         self.client.get("/json_view/")
         store_id = list(DebugToolbar._store)[0]
-        data = {"signed": SignedDataForm.sign({"store_id": store_id})}
+        data = {"store_id": store_id, "exclude_history": True}
         response = self.client.get(reverse("djdt:history_sidebar"), data=data)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             set(response.json()),
             self.PANEL_KEYS,
+        )
+
+    def test_history_sidebar_includes_history(self):
+        """Validate the history sidebar view."""
+        self.client.get("/json_view/")
+        panel_keys = copy.copy(self.PANEL_KEYS)
+        panel_keys.add("HistoryPanel")
+        panel_keys.add("RedirectsPanel")
+        store_id = list(DebugToolbar._store)[0]
+        data = {"store_id": store_id}
+        response = self.client.get(reverse("djdt:history_sidebar"), data=data)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            set(response.json()),
+            panel_keys,
         )
 
     @override_settings(
@@ -121,7 +147,7 @@ class HistoryViewsTestCase(IntegrationTestCase):
         """Validate the history sidebar view."""
         self.client.get("/json_view/")
         store_id = list(DebugToolbar._store)[0]
-        data = {"signed": SignedDataForm.sign({"store_id": store_id})}
+        data = {"store_id": store_id, "exclude_history": True}
         response = self.client.get(reverse("djdt:history_sidebar"), data=data)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -131,14 +157,14 @@ class HistoryViewsTestCase(IntegrationTestCase):
         self.client.get("/json_view/")
 
         # Querying old store_id should return in empty response
-        data = {"signed": SignedDataForm.sign({"store_id": store_id})}
+        data = {"store_id": store_id, "exclude_history": True}
         response = self.client.get(reverse("djdt:history_sidebar"), data=data)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {})
 
         # Querying with latest store_id
         latest_store_id = list(DebugToolbar._store)[0]
-        data = {"signed": SignedDataForm.sign({"store_id": latest_store_id})}
+        data = {"store_id": latest_store_id, "exclude_history": True}
         response = self.client.get(reverse("djdt:history_sidebar"), data=data)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
@@ -146,28 +172,26 @@ class HistoryViewsTestCase(IntegrationTestCase):
             self.PANEL_KEYS,
         )
 
-    def test_history_refresh_invalid_signature(self):
-        response = self.client.get(reverse("djdt:history_refresh"))
-        self.assertEqual(response.status_code, 400)
-
-        data = {"signed": "eyJzdG9yZV9pZCI6ImZvbyIsImhhc2giOiI4YWFiMzIzZGZhODIyMW"}
-        response = self.client.get(reverse("djdt:history_refresh"), data=data)
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(b"Invalid signature", response.content)
-
     def test_history_refresh(self):
         """Verify refresh history response has request variables."""
-        data = {"foo": "bar"}
-        self.client.get("/json_view/", data, content_type="application/json")
-        data = {"signed": SignedDataForm.sign({"store_id": "foo"})}
-        response = self.client.get(reverse("djdt:history_refresh"), data=data)
+        self.client.get("/json_view/", {"foo": "bar"}, content_type="application/json")
+        self.client.get(
+            "/json_view/", {"spam": "eggs"}, content_type="application/json"
+        )
+
+        response = self.client.get(
+            reverse("djdt:history_refresh"), data={"store_id": "foo"}
+        )
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(len(data["requests"]), 1)
+        self.assertEqual(len(data["requests"]), 2)
 
-        store_id = list(DebugToolbar._store)[0]
-        signature = SignedDataForm.sign({"store_id": store_id})
-        self.assertIn(html.escape(signature), data["requests"][0]["content"])
+        store_ids = list(DebugToolbar._store)
+        self.assertIn(html.escape(store_ids[0]), data["requests"][0]["content"])
+        self.assertIn(html.escape(store_ids[1]), data["requests"][1]["content"])
 
         for val in ["foo", "bar"]:
             self.assertIn(val, data["requests"][0]["content"])
+
+        for val in ["spam", "eggs"]:
+            self.assertIn(val, data["requests"][1]["content"])
